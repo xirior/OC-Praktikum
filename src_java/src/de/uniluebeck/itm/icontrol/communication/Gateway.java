@@ -18,6 +18,7 @@ package de.uniluebeck.itm.icontrol.communication;
 import ishell.device.MessagePacket;
 import ishell.plugins.Plugin;
 
+import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Set;
@@ -27,8 +28,6 @@ import de.uniluebeck.itm.icontrol.communication.listener.FeatureListener;
 import de.uniluebeck.itm.icontrol.communication.listener.MessageListener;
 
 public class Gateway implements Communication {
-	private final String stringSeparator = "\r"; // String-value which is used
-	// as separator
 
 	private Set<FeatureListener> featureListener;
 	private Set<MessageListener> messageListener;
@@ -73,22 +72,28 @@ public class Gateway implements Communication {
 	 */
 	public void doTask(final int robotId, final String taskName, final int paramLength, final int[] parameters) {
 		final byte[] idArray = intToByteArray(robotId, 2);
-		final byte[] taskNameArray = taskName.getBytes();
+		byte[] taskNameArray = null;
+		try {
+			taskNameArray = taskName.getBytes("US-ASCII");
+		} catch (final UnsupportedEncodingException e) {
+		}
 		final byte paramLengthByte = intToByte(paramLength);
 		final byte[] parametersArray = new byte[parameters.length * 2];
-		for (int i = 0; i < parametersArray.length; i++) {
+		for (int i = 0; i < parameters.length; i++) {
 			byte[] temp = new byte[2];
 			temp = intToByteArray(parameters[i], 2);
 			parametersArray[i * 2] = temp[0];
 			parametersArray[i * 2 + 1] = temp[1];
 		}
-		final ByteBuffer bb = ByteBuffer.allocate(2 + idArray.length + parametersArray.length + taskNameArray.length);
-		final byte messageType = 0;
+		final byte terminator = (byte) '\0';
+		final ByteBuffer bb = ByteBuffer.allocate(2 + idArray.length + parametersArray.length + taskNameArray.length + 1);
+		final byte messageType = 200;
 		bb.put(messageType);
 		bb.put(idArray);
 		bb.put(paramLengthByte);
 		bb.put(parametersArray);
 		bb.put(taskNameArray);
+		bb.put(terminator);
 		ishellPlugin.sendPacket(sendType, bb.array());
 	}
 
@@ -97,7 +102,7 @@ public class Gateway implements Communication {
 	 */
 	public void showMeWhatYouGot() {
 		final byte[] send = new byte[1];
-		send[0] = 1;
+		send[0] = 201;
 		ishellPlugin.sendPacket(sendType, send);
 	}
 
@@ -113,10 +118,10 @@ public class Gateway implements Communication {
 			final byte[] message = packet.getContent();
 			final int type = unsignedSingleByteToInt(message[0]);
 			switch (type) {
-				case (2):
+				case (202):
 					onMessage(cutByteArray(message, 1, message.length));
 					break;
-				case (3):
+				case (203):
 					onFeature(cutByteArray(message, 1, message.length));
 					break;
 				default:
@@ -142,18 +147,23 @@ public class Gateway implements Communication {
 		final byte[] lengthByteArray = cutByteArray(message, 2, 3);
 		final int valueLength = unsignedSingleByteToInt(lengthByteArray[0]);
 		// Decodes the parameter array
-		final byte[] valuesByteArray = cutByteArray(message, 3, valueLength + 3);
-		final int[] values = new int[valuesByteArray.length];
+		final byte[] valuesByteArray = cutByteArray(message, 3, valueLength*2 + 3);
+		final int[] values = new int[valuesByteArray.length/2];
 		for (int i = 0; i < values.length; i++) {
-			values[i] = unsignedDualByteToInt(cutByteArray(valuesByteArray, i * 2, i * 2 + 1));
+			values[i] = unsignedDualByteToInt(cutByteArray(valuesByteArray, i * 2, i * 2 + 2));
 		}
 		// Decodes the name of the task
-		final String taskName = new String(cutByteArray(message, valueLength + 3, message.length));
+		String taskName = "";
+		try {
+			taskName = new String(cutByteArray(message, valueLength*2 + 3, message.length - 1), "US-ASCII");
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
 		// Calls the observers
 		for (final MessageListener listener : messageListener) {
 			listener.onMessage(robotId, taskName, valueLength, values);
 		}
-
+		
 	}
 
 	/**
@@ -177,20 +187,20 @@ public class Gateway implements Communication {
 		}
 		// Decodes the name of the tasks and the name of parameters
 		final String tasksParams = new String(cutByteArray(message, taskListLength + 3, message.length));
-		final StringTokenizer st = new StringTokenizer(tasksParams, stringSeparator);
+		final StringTokenizer st = new StringTokenizer(tasksParams);
 		final String[] taskList = new String[taskListLength];
 		for (int i = 0; i < taskListLength; i++) {
-			taskList[i] = st.nextToken();
+			taskList[i] = st.nextToken().trim();
 		}
 		final String[][] paramList = new String[taskListLength][maxValueOfArray(paramListLength)];
 		for (int i = 0; i < taskListLength; i++) {
 			for (int j = 0; j < paramListLength[i]; j++) {
-				paramList[i][j] = st.nextToken();
+				paramList[i][j] = st.nextToken().trim();
 			}
 		}
 		for (final FeatureListener listener : featureListener) {
 			listener.onAction(robotId, taskListLength, taskList, paramListLength, paramList);
-		}
+		}	
 	}
 
 	/**

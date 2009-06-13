@@ -233,8 +233,15 @@ public class Gateway implements Communication {
 	 * @return The according byte value
 	 */
 	private byte intToByte(final int integer) {
-		final byte[] array = intToByteArray(integer, 1);
+		byte[] array;
+		if(integer < 128) {
+			array = intToByteArray(integer, 1);
+	  	} else { 
+	  		array = intToByteArray(integer, 2);
+		}
 		return array[0];
+		/*final byte[] array = intToByteArray(integer, 1);
+		return array[0];*/
 	}
 
 	/**

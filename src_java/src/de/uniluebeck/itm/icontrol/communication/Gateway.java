@@ -179,6 +179,7 @@ public class Gateway implements Communication {
 		// Decodes the length of the task list
 		final byte[] taskListLengthArray = cutByteArray(message, 2, 3);
 		final int taskListLength = unsignedSingleByteToInt(taskListLengthArray[0]);
+
 		// Decodes the amount of parameters for each task
 		final byte[] paramListLengthArray = cutByteArray(message, 3, taskListLength + 3);
 		final int[] paramListLength = new int[paramListLengthArray.length];
@@ -187,20 +188,23 @@ public class Gateway implements Communication {
 		}
 		// Decodes the name of the tasks and the name of parameters
 		final String tasksParams = new String(cutByteArray(message, taskListLength + 3, message.length));
-		final StringTokenizer st = new StringTokenizer(tasksParams);
+		byte[] seperatorByte = new byte[1];
+		seperatorByte[0] = '\0';
+		String seperator = new String(seperatorByte);
+		final StringTokenizer st = new StringTokenizer(tasksParams, seperator);
 		final String[] taskList = new String[taskListLength];
 		for (int i = 0; i < taskListLength; i++) {
-			taskList[i] = st.nextToken().trim();
+			taskList[i] = st.nextToken();
 		}
 		final String[][] paramList = new String[taskListLength][maxValueOfArray(paramListLength)];
 		for (int i = 0; i < taskListLength; i++) {
 			for (int j = 0; j < paramListLength[i]; j++) {
-				paramList[i][j] = st.nextToken().trim();
+				paramList[i][j] = st.nextToken();
 			}
 		}
 		for (final FeatureListener listener : featureListener) {
 			listener.onAction(robotId, taskListLength, taskList, paramListLength, paramList);
-		}	
+		}
 	}
 
 	/**
@@ -212,17 +216,20 @@ public class Gateway implements Communication {
 	 *            The wished size of the byte array
 	 * @return The byte array with the converted integer value
 	 */
-	private byte[] intToByteArray(final int integer, final int byteLength) {
-		final int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer : integer)) / 8;
-		final byte[] byteArray = new byte[byteLength];
-		if (byteNum > byteLength) {
-			return null;
+	private byte[] intToByteArray(int integer, int byteLength) {
+		int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer
+				: integer)) / 8;
+		int trueLength = (integer >= java.lang.Math.pow(2, byteLength*7) ? byteLength+1 : byteLength);
+		byte[] byteArray = new byte[trueLength];
+		for (int n = 0; n < byteNum; n++)
+			byteArray[(trueLength - 1) - n] = (byte) (integer >>> (n * 8));
+		for (int i = 0; i < byteArray.length; i++) {
 		}
-		for (int n = 0; n < byteNum; n++) {
-			byteArray[(byteLength - 1) - n] = (byte) (integer >>> (n * 8));
+		if(trueLength > byteLength) {
+			return cutByteArray(byteArray, 1, trueLength);
+		} else {
+			return (byteArray);
 		}
-
-		return (byteArray);
 	}
 
 	/**
@@ -232,16 +239,13 @@ public class Gateway implements Communication {
 	 *            The integer value which should be converted
 	 * @return The according byte value
 	 */
-	private byte intToByte(final int integer) {
-		byte[] array;
-		if(integer < 128) {
-			array = intToByteArray(integer, 1);
-	  	} else { 
-	  		array = intToByteArray(integer, 2);
+	private byte intToByte(int integer) {
+		if (integer > 255) {
+			return 0;
 		}
+		byte[] array;
+		array = intToByteArray(integer, 1);
 		return array[0];
-		/*final byte[] array = intToByteArray(integer, 1);
-		return array[0];*/
 	}
 
 	/**

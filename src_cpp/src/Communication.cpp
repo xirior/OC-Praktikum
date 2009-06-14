@@ -1,10 +1,3 @@
-/*
- * Communication.cpp
- *
- *  Created on: 04.06.2009
- *      Author: Administrator
- */
-
 #include <isense/isense_memory.h>
 #include <isense/uart.h>
 #include <isense/util/util.h>
@@ -55,11 +48,11 @@ Communication::~Communication() {
 void Communication::sendFeatures(uint16 robotId, uint8 taskListLength,
 		const char ** taskList, const uint8 * paramListLength,
 		const char *** paramList) {
-			uint8_t len = 4 + taskListLength;
-			uint8_t taskListCharLen = 0;
+			uint8 len = 4 + taskListLength;
+			uint8 taskListCharLen = 0;
 			for (int i = 0; i < taskListLength; ++i) {
 				//calculate amount of bytes we need for the task list.
-				uint8_t tmp = strlen(taskList[i]) + 1;
+				uint8 tmp = strlen(taskList[i]) + 1;
 				len += tmp;
 				taskListCharLen += tmp;
 				for (int j = 0; j < paramListLength[i]; ++j) {
@@ -67,7 +60,7 @@ void Communication::sendFeatures(uint16 robotId, uint8 taskListLength,
 				}
 			}
 			if (len < 255) {
-				uint8_t buf[len];
+				uint8 buf[len];
 
 				buf[0] = 203;
 				buf[1] = robotId >> 8;
@@ -103,10 +96,10 @@ void Communication::sendFeatures(uint16 robotId, uint8 taskListLength,
 
 void Communication::sendMessage(uint16 robotId, const char * taskName,
 		uint8 valueLength, const uint16 * values) {
-			uint8_t taskNameLen = strlen(taskName);
-			uint8_t len = 4 + taskNameLen + 1 + valueLength * 2;
+			uint8 taskNameLen = strlen(taskName);
+			uint8 len = 4 + taskNameLen + 1 + valueLength * 2;
 			if (len < 255) {
-				uint8_t buf[len];
+				uint8 buf[len];
 				buf[0] = 202;
 				buf[1] = robotId >> 8;
 				buf[2] = robotId;
@@ -138,7 +131,7 @@ void Communication::decodeMessage(uint8 len, const uint8 * buf) {
 		paramLength = buf[3];
 		parameters = (uint16 *) isense::malloc(sizeof(uint16) * paramLength);
 
-		for (int i = 0; i < paramLength; i = i + 2) {
+		for (int i = 0; i < paramLength*2; i = i + 2) {
 			parameters[i] = (buf[4 + i] << 8) | buf[4 + i + 1];
 		}
 

@@ -20,9 +20,11 @@ import ishell.plugins.Plugin;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.TreeSet;
 
 import de.uniluebeck.itm.icontrol.communication.listener.FeatureListener;
 import de.uniluebeck.itm.icontrol.communication.listener.MessageListener;
@@ -33,11 +35,13 @@ public class Gateway implements Communication {
 	private Set<MessageListener> messageListener;
 	private Plugin ishellPlugin;
 	private final int sendType = 10;
+	private HashMap<Integer, Set<MessagePart>> msgQueue;
 
 	public Gateway(final Plugin ishellPlugin) {
 		this.ishellPlugin = ishellPlugin;
 		featureListener = new HashSet<FeatureListener>();
 		messageListener = new HashSet<MessageListener>();
+		msgQueue = new HashMap<Integer, Set<MessagePart>>();
 	}
 
 	public void addFeatureListener(final FeatureListener listener) {
@@ -87,7 +91,7 @@ public class Gateway implements Communication {
 		}
 		final byte terminator = (byte) '\0';
 		final ByteBuffer bb = ByteBuffer.allocate(2 + idArray.length + parametersArray.length + taskNameArray.length + 1);
-		final byte messageType = 200;
+		final byte messageType = (byte) 200;
 		bb.put(messageType);
 		bb.put(idArray);
 		bb.put(paramLengthByte);
@@ -102,7 +106,7 @@ public class Gateway implements Communication {
 	 */
 	public void showMeWhatYouGot() {
 		final byte[] send = new byte[1];
-		send[0] = 201;
+		send[0] = (byte) 201;
 		ishellPlugin.sendPacket(sendType, send);
 	}
 
@@ -122,9 +126,64 @@ public class Gateway implements Communication {
 					onMessage(cutByteArray(message, 1, message.length));
 					break;
 				case (203):
-					onFeature(cutByteArray(message, 1, message.length));
+					checkMessageParts(cutByteArray(message, 1, message.length));
 					break;
 				default:
+			}
+		}
+	}
+
+	/**
+	 * Checks if a received message is complete or just a part of splitted messages. If the message
+	 * is a one-part message onFeature will called, otherwise the message queue (msgQueue) will be
+	 * checked if there are already parts of the message. If all message parts have been received,
+	 * the message parts will be build together and onFeature will be called. If there are still
+	 * parts of the message missing, the current message part will be added to the message queue.
+	 */
+	private void checkMessageParts(final byte[] message) {
+		int pos = 0;
+		final int robotId = unsignedDualByteToInt(cutByteArray(message, pos, pos + 2));
+		pos += 2;
+		final int msgId = unsignedSingleByteToInt(cutByteArray(message, pos, pos + 1)[0]);
+		pos++;
+		final int msgAmount = unsignedSingleByteToInt(cutByteArray(message, pos, pos + 1)[0]);
+		pos++;
+		final int msgNumber = unsignedSingleByteToInt(cutByteArray(message, pos, pos + 1)[0]);
+		pos++;
+		final byte[] byteMsgPart = cutByteArray(message, pos, message.length);
+		if (msgAmount == 1) {
+			// One-part message
+			onFeature(robotId, cutByteArray(message, pos, message.length));
+		} else {
+			final MessagePart msgPart = new MessagePart(robotId, msgId, msgAmount, msgNumber, byteMsgPart);
+			final int hashValue = msgPart.hashCode();
+			Set<MessagePart> msgSet = msgQueue.get(hashValue);
+			if (null == msgSet) {
+				// First message part -> create new message set and add it to the queue
+				msgSet = new TreeSet<MessagePart>();
+				msgSet.add(msgPart);
+				msgQueue.put(hashValue, msgSet);
+			} else if (msgSet.size() == msgAmount - 1) {
+				// All message parts arrived, build complete message
+				// and call onFeature
+				msgSet.add(msgPart);
+				int byteArraySize = 0;
+				for (final MessagePart messagePart : msgSet) {
+					byteArraySize += messagePart.getMessagePart().length;
+				}
+				final byte[] completeMsg = new byte[byteArraySize];
+				int index = -1;
+
+				for (final MessagePart messagePart : msgSet) {
+					for (final byte b : messagePart.getMessagePart()) {
+						completeMsg[++index] = b;
+					}
+				}
+				msgQueue.remove(msgSet);
+				onFeature(robotId, completeMsg);
+			} else {
+				// add message part to message set
+				msgSet.add(msgPart);
 			}
 		}
 	}
@@ -141,29 +200,33 @@ public class Gateway implements Communication {
 	 *            The message, which was received
 	 */
 	private void onMessage(final byte[] message) {
+		// position in message
+		int pos = 0;
 		// Decodes the robot ID
-		final int robotId = unsignedDualByteToInt(cutByteArray(message, 0, 2));
+		final int robotId = unsignedDualByteToInt(cutByteArray(message, pos, pos + 2));
+		pos += 4;// 2 byte robot id and 2 byte destination id
 		// Decodes the amount of parameters
-		final byte[] lengthByteArray = cutByteArray(message, 2, 3);
+		final byte[] lengthByteArray = cutByteArray(message, pos, pos + 1);
+		pos += 1;
 		final int valueLength = unsignedSingleByteToInt(lengthByteArray[0]);
 		// Decodes the parameter array
-		final byte[] valuesByteArray = cutByteArray(message, 3, valueLength*2 + 3);
-		final int[] values = new int[valuesByteArray.length/2];
+		final byte[] valuesByteArray = cutByteArray(message, pos, valueLength * 2 + pos);
+		final int[] values = new int[valuesByteArray.length / 2];
 		for (int i = 0; i < values.length; i++) {
 			values[i] = unsignedDualByteToInt(cutByteArray(valuesByteArray, i * 2, i * 2 + 2));
 		}
 		// Decodes the name of the task
 		String taskName = "";
 		try {
-			taskName = new String(cutByteArray(message, valueLength*2 + 3, message.length - 1), "US-ASCII");
-		} catch (UnsupportedEncodingException e) {
+			taskName = new String(cutByteArray(message, valueLength * 2 + pos, message.length - 1), "US-ASCII");
+		} catch (final UnsupportedEncodingException e) {
 			e.printStackTrace();
 		}
 		// Calls the observers
 		for (final MessageListener listener : messageListener) {
 			listener.onMessage(robotId, taskName, valueLength, values);
 		}
-		
+
 	}
 
 	/**
@@ -172,25 +235,41 @@ public class Gateway implements Communication {
 	 * 
 	 * @param message
 	 *            The message, which was received
+	 * 
+	 * @param robotId
+	 *            The source robot Id
 	 */
-	private void onFeature(final byte[] message) {
-		// Decodes the robot ID
-		final int robotId = unsignedDualByteToInt(cutByteArray(message, 0, 2));
+	private void onFeature(final int robotId, final byte[] message) {
+		// position in message
+		int pos = 0;
 		// Decodes the length of the task list
-		final byte[] taskListLengthArray = cutByteArray(message, 2, 3);
+		final byte[] taskListLengthArray = cutByteArray(message, pos, pos + 1);
+		pos++;
 		final int taskListLength = unsignedSingleByteToInt(taskListLengthArray[0]);
-
 		// Decodes the amount of parameters for each task
-		final byte[] paramListLengthArray = cutByteArray(message, 3, taskListLength + 3);
+		final byte[] paramListLengthArray = cutByteArray(message, pos, taskListLength + pos);
+		pos += taskListLength;
 		final int[] paramListLength = new int[paramListLengthArray.length];
 		for (int i = 0; i < paramListLength.length; i++) {
 			paramListLength[i] = unsignedSingleByteToInt(paramListLengthArray[i]);
 		}
-		// Decodes the name of the tasks and the name of parameters
-		final String tasksParams = new String(cutByteArray(message, taskListLength + 3, message.length));
-		byte[] seperatorByte = new byte[1];
+
+		// sensor amount
+		final byte[] tmp = cutByteArray(message, pos, pos + 1);
+		pos++;
+		final int sensorLength = unsignedSingleByteToInt(tmp[0]);
+		// sensor ranges
+		final int[] sensorRanges = new int[sensorLength * 2];
+		final byte[] sensorRangesArray = cutByteArray(message, pos, pos + sensorLength * 2);
+		pos += sensorLength * 2;
+		for (int i = 0; i < sensorRanges.length; i++) {
+			sensorRanges[i] = unsignedSingleByteToInt(sensorRangesArray[i]);
+		}
+		// Decodes the name of the tasks, the name of parameters and the sensor names
+		final String tasksParams = new String(cutByteArray(message, pos, message.length));
+		final byte[] seperatorByte = new byte[1];
 		seperatorByte[0] = '\0';
-		String seperator = new String(seperatorByte);
+		final String seperator = new String(seperatorByte);
 		final StringTokenizer st = new StringTokenizer(tasksParams, seperator);
 		final String[] taskList = new String[taskListLength];
 		for (int i = 0; i < taskListLength; i++) {
@@ -202,8 +281,12 @@ public class Gateway implements Communication {
 				paramList[i][j] = st.nextToken();
 			}
 		}
+		final String[] sensorNames = new String[sensorLength];
+		for (int i = 0; i < sensorLength; i++) {
+			sensorNames[i] = st.nextToken();
+		}
 		for (final FeatureListener listener : featureListener) {
-			listener.onAction(robotId, taskListLength, taskList, paramListLength, paramList);
+			listener.onAction(robotId, taskListLength, taskList, paramListLength, paramList, sensorLength, sensorNames, sensorRanges);
 		}
 	}
 
@@ -216,16 +299,21 @@ public class Gateway implements Communication {
 	 *            The wished size of the byte array
 	 * @return The byte array with the converted integer value
 	 */
-	private byte[] intToByteArray(int integer, int byteLength) {
-		int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer
-				: integer)) / 8;
-		int trueLength = (integer >= java.lang.Math.pow(2, byteLength*7) ? byteLength+1 : byteLength);
-		byte[] byteArray = new byte[trueLength];
-		for (int n = 0; n < byteNum; n++)
+	private byte[] intToByteArray(final int integer, final int byteLength) {
+		if ((integer > -128) && (integer < 0)) {
+			final byte[] byteArray = new byte[byteLength];
+			byteArray[byteLength - 1] = (byte) integer;
+			return byteArray;
+		}
+		final int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer : integer)) / 8;
+		final int trueLength = (integer >= java.lang.Math.pow(2, byteLength * 7) ? byteLength + 1 : byteLength);
+		final byte[] byteArray = new byte[trueLength];
+		for (int n = 0; n < byteNum; n++) {
 			byteArray[(trueLength - 1) - n] = (byte) (integer >>> (n * 8));
+		}
 		for (int i = 0; i < byteArray.length; i++) {
 		}
-		if(trueLength > byteLength) {
+		if (trueLength > byteLength) {
 			return cutByteArray(byteArray, 1, trueLength);
 		} else {
 			return (byteArray);
@@ -239,7 +327,7 @@ public class Gateway implements Communication {
 	 *            The integer value which should be converted
 	 * @return The according byte value
 	 */
-	private byte intToByte(int integer) {
+	private byte intToByte(final int integer) {
 		if (integer > 255) {
 			return 0;
 		}
@@ -291,6 +379,9 @@ public class Gateway implements Communication {
 		if (end < start) {
 			return null;
 		}
+		if (end > array.length) {
+			return null;
+		}
 		final byte[] strippedDown = new byte[end - start];
 		for (int i = start; i < end; i++) {
 			strippedDown[i - start] = array[i];
@@ -313,6 +404,69 @@ public class Gateway implements Communication {
 			}
 		}
 		return max;
+	}
+
+	private class MessagePart implements Comparable<MessagePart> {
+
+		private int robotId;
+		private int messageId;
+		private int messageAmount;
+		private int messageNumber;
+		private byte[] messagePart;
+
+		MessagePart(final int robotId, final int msgId, final int msgAmount, final int msgNr, final byte[] message) {
+			this.robotId = robotId;
+			this.messageId = msgId;
+			this.messageAmount = msgAmount;
+			this.messageNumber = msgNr;
+			this.messagePart = message;
+		}
+
+		public int getRobotId() {
+			return robotId;
+		}
+
+		public int getMessageId() {
+			return messageId;
+		}
+
+		public int getMessageAmount() {
+			return messageAmount;
+		}
+
+		public int getMessageNumber() {
+			return messageNumber;
+		}
+
+		public byte[] getMessagePart() {
+			return messagePart;
+		}
+
+		@Override
+		public int hashCode() {
+			final int prime = 31;
+			int result = 1;
+			result = prime * result + messageId;
+			result = prime * result + robotId;
+			return result;
+		}
+
+		// --------------------------------------------------------------------------------
+		/*
+		 * (non-Javadoc)
+		 * 
+		 * @see java.lang.Comparable#compareTo(java.lang.Object)
+		 */
+		@Override
+		public int compareTo(final MessagePart o) {
+			if (o.getMessageNumber() > messageNumber) {
+				return -1;
+			} else if (o.getMessageNumber() == messageNumber) {
+				return 0;
+			} else {
+				return 1;
+			}
+		}
 	}
 
 }

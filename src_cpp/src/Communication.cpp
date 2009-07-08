@@ -153,8 +153,8 @@ void Communication::decodeMessage(uint8 len, const uint8 * buf) {
 			parameters
 					= (uint16 *) isense::malloc(sizeof(uint16) * paramLength);
 
-			for (int i = 0; i < paramLength * 2; i = i + 2) {
-				parameters[i] = (buf[4 + i] << 8) | buf[4 + i + 1];
+			for (int i = 0; i < paramLength; ++i) {
+				parameters[i] = (buf[4 + i*2] << 8) | buf[4 + i*2 + 1];
 			}
 
 			taskName = (char *) buf + 4 + paramLength * 2;
@@ -182,8 +182,8 @@ void Communication::decodeMessage(uint8 len, const uint8 * buf) {
 			valueLength = buf[5];
 			values = (uint16 *) isense::malloc(sizeof(uint16) * valueLength);
 
-			for(int i = 0; i < valueLength * 2; ++i) {
-				values[i] = (buf[6 + i] << 8) | buf[6 + i + 1];
+			for(int i = 0; i < valueLength; ++i) {
+				values[i] = (buf[6 + i*2] << 8) | buf[6 + i*2 + 1];
 			}
 
 			taskName = (char *) buf + 6 + valueLength * 2;

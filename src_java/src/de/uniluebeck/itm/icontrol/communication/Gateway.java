@@ -1,5 +1,3 @@
-package de.uniluebeck.itm.icontrol.communication;
-
 /* ----------------------------------------------------------------------
  * This file is part of the WISEBED project.
  * Copyright (C) 2009 by the Institute of Telematics, University of Luebeck
@@ -7,13 +5,7 @@ package de.uniluebeck.itm.icontrol.communication;
  * under the terms of the BSD License. Refer to bsd-licence.txt
  * file in the root of the source tree for further details.
  ------------------------------------------------------------------------*/
-
-/**
- * @class Gateway
- * @author Moehlmann, Schneider, Witt
- * @brief Is responsible for the communication with the robots/sensors
- * @detailed This class is for sending and  receiving messages, also to decode and encode the messages
- */
+package de.uniluebeck.itm.icontrol.communication;
 
 import ishell.device.MessagePacket;
 import ishell.plugins.Plugin;
@@ -29,6 +21,16 @@ import java.util.TreeSet;
 import de.uniluebeck.itm.icontrol.communication.listener.FeatureListener;
 import de.uniluebeck.itm.icontrol.communication.listener.MessageListener;
 
+/**
+ * @class Gateway
+ * @author Moehlmann, Schneider, Witt
+ * @brief A class for the communication between robots and gui
+ * @detailed This class represents a gateway between the gui and the robots. It
+ * 			 handles the communication by encoding and sending messages from
+ * 			 the gui to one or more robots and decoding messages from a robot
+ * 			 to the gui. The gui has to register as a feature listener and a
+ * 			 message listener to receive all arriving messages. 
+ */
 public class Gateway implements Communication {
 
 	private Set<FeatureListener> featureListener;
@@ -37,6 +39,14 @@ public class Gateway implements Communication {
 	private final int sendType = 10;
 	private HashMap<Integer, Set<MessagePart>> msgQueue;
 
+	/**
+	 * A basic constructor. The given <code>Plugin</code> object is necessary
+	 * for the communication between this class and the gui. In the constructor
+	 * the sets for the listeners and the message queue will be instantiated.
+	 * 
+	 * @param ishellPlugin
+	 *				The ishell plugin object
+	 */
 	public Gateway(final Plugin ishellPlugin) {
 		this.ishellPlugin = ishellPlugin;
 		featureListener = new HashSet<FeatureListener>();
@@ -44,35 +54,36 @@ public class Gateway implements Communication {
 		msgQueue = new HashMap<Integer, Set<MessagePart>>();
 	}
 
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#addFeatureListener(de.uniluebeck.itm.icontrol.communication.listener.FeatureListener)
+	 */
 	public void addFeatureListener(final FeatureListener listener) {
 		featureListener.add(listener);
 	}
 
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#addMessageListener(de.uniluebeck.itm.icontrol.communication.listener.MessageListener)
+	 */
 	public void addMessageListener(final MessageListener listener) {
 		messageListener.add(listener);
 	}
 
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#removeFeatureListener(de.uniluebeck.itm.icontrol.communication.listener.FeatureListener)
+	 */
 	public void removeFeatureListener(final FeatureListener listener) {
 		featureListener.remove(listener);
 	}
 
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#removeMessageListener(de.uniluebeck.itm.icontrol.communication.listener.MessageListener)
+	 */
 	public void removeMessageListener(final MessageListener listener) {
 		messageListener.remove(listener);
 	}
-
-	/**
-	 * Sends a task to the sensor-network
-	 * 
-	 * @param robotId
-	 *            The ID of the robot, which is supposed to receive the message (integer value must
-	 *            not be higher than 2 bytes)
-	 * @param taskName
-	 *            The name of the task, which should be proceeded
-	 * @param paramLength
-	 *            Amount of values in the parameters array(integer value must not be higher than 2
-	 *            bytes)
-	 * @param parameters
-	 *            The values of the parameters (integer values must not be higher than 2 bytes)
+	
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#doTask(int, java.lang.String, int, int[])
 	 */
 	public void doTask(final int robotId, final String taskName, final int paramLength, final int[] parameters) {
 		final byte[] idArray = intToByteArray(robotId, 2);
@@ -101,8 +112,8 @@ public class Gateway implements Communication {
 		ishellPlugin.sendPacket(sendType, bb.array());
 	}
 
-	/**
-	 * Calls every robot, to send the list of available features
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#showMeWhatYouGot()
 	 */
 	public void showMeWhatYouGot() {
 		final byte[] send = new byte[1];
@@ -110,12 +121,8 @@ public class Gateway implements Communication {
 		ishellPlugin.sendPacket(sendType, send);
 	}
 
-	/**
-	 * Is called, when a message was received. This methods checks the type and calls the according
-	 * method It reads the first byte which should be the type byte
-	 * 
-	 * @param message
-	 *            The message, which was received
+	/* (non-Javadoc)
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#receive(ishell.device.MessagePacket)
 	 */
 	public void receive(final MessagePacket packet) {
 		if (packet.getType() == sendType) {
@@ -134,11 +141,16 @@ public class Gateway implements Communication {
 	}
 
 	/**
-	 * Checks if a received message is complete or just a part of splitted messages. If the message
-	 * is a one-part message onFeature will called, otherwise the message queue (msgQueue) will be
-	 * checked if there are already parts of the message. If all message parts have been received,
-	 * the message parts will be build together and onFeature will be called. If there are still
-	 * parts of the message missing, the current message part will be added to the message queue.
+	 * Checks if a received message is complete or just a part of a message. If
+	 * the message is a one-part message onFeature will be called, otherwise 
+	 * the message queue (msgQueue) will be checked if there are already parts
+	 * of the message. If all message parts have been received, the message
+	 * parts will be build together and onFeature will be called. If there are
+	 * still parts of the message missing, the current message part will be 
+	 * added to the message queue.
+	 * 
+	 * @param message
+	 * 			The message as byte array 
 	 */
 	private void checkMessageParts(final byte[] message) {
 		int pos = 0;
@@ -302,7 +314,8 @@ public class Gateway implements Communication {
 	private byte[] intToByteArray(final int integer, final int byteLength) {
 		if ((integer > -128) && (integer < 0)) {
 			final byte[] byteArray = new byte[byteLength];
-			byteArray[byteLength - 1] = (byte) integer;
+			byteArray[0] = (byte) ((integer & 0xff00) >> 8);
+			byteArray[1] = (byte) (0x00ff & integer); 
 			return byteArray;
 		}
 		final int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer : integer)) / 8;

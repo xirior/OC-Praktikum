@@ -16,7 +16,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.TreeSet;
+import java.util.Map.Entry;
 
 import de.uniluebeck.itm.icontrol.communication.listener.FeatureListener;
 import de.uniluebeck.itm.icontrol.communication.listener.MessageListener;
@@ -25,11 +28,10 @@ import de.uniluebeck.itm.icontrol.communication.listener.MessageListener;
  * @class Gateway
  * @author Moehlmann, Schneider, Witt
  * @brief A class for the communication between robots and gui
- * @detailed This class represents a gateway between the gui and the robots. It
- * 			 handles the communication by encoding and sending messages from
- * 			 the gui to one or more robots and decoding messages from a robot
- * 			 to the gui. The gui has to register as a feature listener and a
- * 			 message listener to receive all arriving messages. 
+ * @detailed This class represents a gateway between the gui and the robots. It handles the
+ *           communication by encoding and sending messages from the gui to one or more robots and
+ *           decoding messages from a robot to the gui. The gui has to register as a feature
+ *           listener and a message listener to receive all arriving messages.
  */
 public class Gateway implements Communication {
 
@@ -40,50 +42,91 @@ public class Gateway implements Communication {
 	private HashMap<Integer, Set<MessagePart>> msgQueue;
 
 	/**
-	 * A basic constructor. The given <code>Plugin</code> object is necessary
-	 * for the communication between this class and the gui. In the constructor
-	 * the sets for the listeners and the message queue will be instantiated.
+	 * A basic constructor. The given <code>Plugin</code> object is necessary for the communication
+	 * between this class and the gui. In the constructor the sets for the listeners and the message
+	 * queue will be instantiated.
 	 * 
 	 * @param ishellPlugin
-	 *				The ishell plugin object
+	 *            The ishell plugin object
 	 */
 	public Gateway(final Plugin ishellPlugin) {
 		this.ishellPlugin = ishellPlugin;
 		featureListener = new HashSet<FeatureListener>();
 		messageListener = new HashSet<MessageListener>();
 		msgQueue = new HashMap<Integer, Set<MessagePart>>();
+		final Timer timer = new Timer();
+		final TimerTask task = new TimerTask() {
+			@Override
+			public void run() {
+				checkTimestamps();
+			}
+		};
+		timer.scheduleAtFixedRate(task, 0, 10000);
 	}
 
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#addFeatureListener(de.uniluebeck.itm.icontrol.communication.listener.FeatureListener)
+	// --------------------------------------------------------------------------------
+	/**
+	 * Removes every message-set which newest part is older than 30 seconds.
+	 */
+	protected void checkTimestamps() {
+		for (final Entry<Integer, Set<MessagePart>> set : msgQueue.entrySet()) {
+			if (!set.getValue().isEmpty()) {
+				if (System.currentTimeMillis() > set.getValue().iterator().next().getTimestamp() + 30000) {
+					msgQueue.remove(set);
+				}
+			}
+		}
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.uniluebeck.itm.icontrol.communication.Communication#addFeatureListener(de.uniluebeck.itm
+	 * .icontrol.communication.listener.FeatureListener)
 	 */
 	public void addFeatureListener(final FeatureListener listener) {
 		featureListener.add(listener);
 	}
 
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#addMessageListener(de.uniluebeck.itm.icontrol.communication.listener.MessageListener)
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.uniluebeck.itm.icontrol.communication.Communication#addMessageListener(de.uniluebeck.itm
+	 * .icontrol.communication.listener.MessageListener)
 	 */
 	public void addMessageListener(final MessageListener listener) {
 		messageListener.add(listener);
 	}
 
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#removeFeatureListener(de.uniluebeck.itm.icontrol.communication.listener.FeatureListener)
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.uniluebeck.itm.icontrol.communication.Communication#removeFeatureListener(de.uniluebeck
+	 * .itm.icontrol.communication.listener.FeatureListener)
 	 */
 	public void removeFeatureListener(final FeatureListener listener) {
 		featureListener.remove(listener);
 	}
 
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#removeMessageListener(de.uniluebeck.itm.icontrol.communication.listener.MessageListener)
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.uniluebeck.itm.icontrol.communication.Communication#removeMessageListener(de.uniluebeck
+	 * .itm.icontrol.communication.listener.MessageListener)
 	 */
 	public void removeMessageListener(final MessageListener listener) {
 		messageListener.remove(listener);
 	}
-	
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#doTask(int, java.lang.String, int, int[])
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see de.uniluebeck.itm.icontrol.communication.Communication#doTask(int, java.lang.String,
+	 * int, int[])
 	 */
 	public void doTask(final int robotId, final String taskName, final int paramLength, final int[] parameters) {
 		final byte[] idArray = intToByteArray(robotId, 2);
@@ -112,7 +155,9 @@ public class Gateway implements Communication {
 		ishellPlugin.sendPacket(sendType, bb.array());
 	}
 
-	/* (non-Javadoc)
+	/*
+	 * (non-Javadoc)
+	 * 
 	 * @see de.uniluebeck.itm.icontrol.communication.Communication#showMeWhatYouGot()
 	 */
 	public void showMeWhatYouGot() {
@@ -121,8 +166,11 @@ public class Gateway implements Communication {
 		ishellPlugin.sendPacket(sendType, send);
 	}
 
-	/* (non-Javadoc)
-	 * @see de.uniluebeck.itm.icontrol.communication.Communication#receive(ishell.device.MessagePacket)
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see
+	 * de.uniluebeck.itm.icontrol.communication.Communication#receive(ishell.device.MessagePacket)
 	 */
 	public void receive(final MessagePacket packet) {
 		if (packet.getType() == sendType) {
@@ -141,16 +189,14 @@ public class Gateway implements Communication {
 	}
 
 	/**
-	 * Checks if a received message is complete or just a part of a message. If
-	 * the message is a one-part message onFeature will be called, otherwise 
-	 * the message queue (msgQueue) will be checked if there are already parts
-	 * of the message. If all message parts have been received, the message
-	 * parts will be build together and onFeature will be called. If there are
-	 * still parts of the message missing, the current message part will be 
-	 * added to the message queue.
+	 * Checks if a received message is complete or just a part of a message. If the message is a
+	 * one-part message onFeature will be called, otherwise the message queue (msgQueue) will be
+	 * checked if there are already parts of the message. If all message parts have been received,
+	 * the message parts will be build together and onFeature will be called. If there are still
+	 * parts of the message missing, the current message part will be added to the message queue.
 	 * 
 	 * @param message
-	 * 			The message as byte array 
+	 *            The message as byte array
 	 */
 	private void checkMessageParts(final byte[] message) {
 		int pos = 0;
@@ -196,6 +242,10 @@ public class Gateway implements Communication {
 			} else {
 				// add message part to message set
 				msgSet.add(msgPart);
+				final long time = System.currentTimeMillis();
+				for (final MessagePart part : msgSet) {
+					part.setTimestamp(time);
+				}
 			}
 		}
 	}
@@ -315,7 +365,7 @@ public class Gateway implements Communication {
 		if ((integer > -128) && (integer < 0)) {
 			final byte[] byteArray = new byte[byteLength];
 			byteArray[0] = (byte) ((integer & 0xff00) >> 8);
-			byteArray[1] = (byte) (0x00ff & integer); 
+			byteArray[1] = (byte) (0x00ff & integer);
 			return byteArray;
 		}
 		final int byteNum = (40 - Integer.numberOfLeadingZeros(integer < 0 ? ~integer : integer)) / 8;
@@ -426,6 +476,7 @@ public class Gateway implements Communication {
 		private int messageAmount;
 		private int messageNumber;
 		private byte[] messagePart;
+		private long timestamp;
 
 		MessagePart(final int robotId, final int msgId, final int msgAmount, final int msgNr, final byte[] message) {
 			this.robotId = robotId;
@@ -433,6 +484,24 @@ public class Gateway implements Communication {
 			this.messageAmount = msgAmount;
 			this.messageNumber = msgNr;
 			this.messagePart = message;
+			timestamp = System.currentTimeMillis();
+		}
+
+		// --------------------------------------------------------------------------------
+		/**
+		 * @return the timestamp
+		 */
+		public long getTimestamp() {
+			return timestamp;
+		}
+
+		// --------------------------------------------------------------------------------
+		/**
+		 * @param timestamp
+		 *            the timestamp to set
+		 */
+		public void setTimestamp(final long timestamp) {
+			this.timestamp = timestamp;
 		}
 
 		public int getRobotId() {
